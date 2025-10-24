@@ -7,4 +7,5 @@ sealed class Screen(val route: String) {
     }
     object BackupRestore : Screen("backup_restore")
     object GroupManagement : Screen("group_management")
+    object VirtualCatalog : Screen("virtual_catalog")
 }

@@ -15,6 +15,7 @@ import com.sh.my.diskdir.ui.screens.*
 import com.sh.my.diskdir.ui.theme.DiskDirTheme
 import com.sh.my.diskdir.viewmodel.FlashDriveViewModel
 import com.sh.my.diskdir.viewmodel.FileExplorerViewModel
+import com.sh.my.diskdir.viewmodel.VirtualCatalogViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +42,7 @@ fun DiskDirApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val flashDriveViewModel: FlashDriveViewModel = viewModel { FlashDriveViewModel(context) }
     val fileExplorerViewModel: FileExplorerViewModel = viewModel()
+    val virtualCatalogViewModel: VirtualCatalogViewModel = viewModel { VirtualCatalogViewModel(context) }
     
     when (currentScreen) {
         is Screen.FlashDriveList -> {
@@ -56,6 +58,9 @@ fun DiskDirApp() {
                 },
                 onNavigateToGroupManagement = {
                     currentScreen = Screen.GroupManagement
+                },
+                onNavigateToVirtualCatalog = {
+                    currentScreen = Screen.VirtualCatalog
                 }
             )
         }
@@ -80,6 +85,15 @@ fun DiskDirApp() {
         is Screen.GroupManagement -> {
             GroupManagementScreen(
                 viewModel = flashDriveViewModel,
+                onNavigateBack = {
+                    currentScreen = Screen.FlashDriveList
+                }
+            )
+        }
+        
+        is Screen.VirtualCatalog -> {
+            VirtualCatalogScreen(
+                viewModel = virtualCatalogViewModel,
                 onNavigateBack = {
                     currentScreen = Screen.FlashDriveList
                 }

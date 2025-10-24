@@ -28,7 +28,8 @@ fun FlashDriveListScreen(
     viewModel: FlashDriveViewModel,
     onNavigateToFileExplorer: (String) -> Unit,
     onNavigateToBackup: () -> Unit,
-    onNavigateToGroupManagement: () -> Unit
+    onNavigateToGroupManagement: () -> Unit,
+    onNavigateToVirtualCatalog: () -> Unit
 ) {
     val flashDrives by viewModel.flashDrives.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
@@ -39,6 +40,9 @@ fun FlashDriveListScreen(
             TopAppBar(
                 title = { Text("Флешки и диски") },
                 actions = {
+                    IconButton(onClick = onNavigateToVirtualCatalog) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Виртуальные каталоги")
+                    }
                     IconButton(onClick = onNavigateToBackup) {
                         Icon(Icons.Default.Backup, contentDescription = "Бекап")
                     }
