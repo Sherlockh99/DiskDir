@@ -48,26 +48,25 @@ fun DiskDirApp() {
         is Screen.FlashDriveList -> {
             FlashDriveListScreen(
                 viewModel = flashDriveViewModel,
+                virtualCatalogViewModel = virtualCatalogViewModel,
                 onNavigateToFileExplorer = { id ->
                     flashDriveId = id
                     currentScreen = Screen.FileExplorer
-                    fileExplorerViewModel.loadDirectory("/storage/usb$id") // Примерный путь
+                    // Открываем виртуальный каталог
+                    virtualCatalogViewModel.openCatalog(id)
                 },
                 onNavigateToBackup = {
                     currentScreen = Screen.BackupRestore
                 },
                 onNavigateToGroupManagement = {
                     currentScreen = Screen.GroupManagement
-                },
-                onNavigateToVirtualCatalog = {
-                    currentScreen = Screen.VirtualCatalog
                 }
             )
         }
         
         is Screen.FileExplorer -> {
-            FileExplorerScreen(
-                viewModel = fileExplorerViewModel,
+            VirtualCatalogScreen(
+                viewModel = virtualCatalogViewModel,
                 onNavigateBack = {
                     currentScreen = Screen.FlashDriveList
                 }

@@ -59,7 +59,19 @@ class VirtualCatalogRepository(private val context: Context) {
     }
     
     private suspend fun saveFileItems(items: List<VirtualFileItem>, catalogId: String) {
-        val entities = items.map { item ->
+        // Собираем все элементы рекурсивно
+        val allItems = mutableListOf<VirtualFileItem>()
+        collectAllItemsRecursively(items, allItems)
+        
+        // Отладочная информация
+        println("=== SAVING FILE ITEMS ===")
+        println("Total items to save: ${allItems.size}")
+        println("Root items: ${items.size}")
+        allItems.forEach { item ->
+            println("Item: ${item.name}, isDir: ${item.isDirectory}, parentId: ${item.parentId}, children: ${item.children.size}")
+        }
+        
+        val entities = allItems.map { item ->
             VirtualFileItemEntity(
                 id = item.id,
                 catalogId = catalogId,
@@ -73,21 +85,34 @@ class VirtualCatalogRepository(private val context: Context) {
             )
         }
         fileItemDao.insertItems(entities)
-        
-        // Рекурсивно сохраняем дочерние элементы
+        println("=== SAVED ${entities.size} ITEMS ===")
+    }
+    
+    private fun collectAllItemsRecursively(items: List<VirtualFileItem>, allItems: MutableList<VirtualFileItem>) {
         for (item in items) {
+            allItems.add(item)
             if (item.children.isNotEmpty()) {
-                saveFileItems(item.children, catalogId)
+                collectAllItemsRecursively(item.children, allItems)
             }
         }
     }
     
     suspend fun getDirectoryContents(catalogId: String, parentId: String?): List<VirtualFileItem> = withContext(Dispatchers.IO) {
-        if (parentId == null) {
+        val items = if (parentId == null) {
             fileItemDao.getRootItems(catalogId).map { it.toVirtualFileItem() }
         } else {
             fileItemDao.getChildren(parentId, catalogId).map { it.toVirtualFileItem() }
         }
+        
+        // Отладочная информация
+        println("=== GETTING DIRECTORY CONTENTS ===")
+        println("CatalogId: $catalogId, ParentId: $parentId")
+        println("Found ${items.size} items")
+        items.forEach { item ->
+            println("Item: ${item.name}, isDir: ${item.isDirectory}, parentId: ${item.parentId}")
+        }
+        
+        items
     }
     
     suspend fun searchInCatalog(catalogId: String, query: String): List<VirtualFileItem> = withContext(Dispatchers.IO) {

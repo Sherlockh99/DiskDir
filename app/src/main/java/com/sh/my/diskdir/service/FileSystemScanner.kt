@@ -30,14 +30,14 @@ class FileSystemScanner(private val context: Context) {
         // Сначала подсчитываем общее количество файлов для прогресса
         totalFiles = countFilesRecursively(rootFile)
         
-        // Сканируем рекурсивно
-        scanDirectoryRecursive(
+        // Сканируем рекурсивно и строим иерархию
+        val rootItems = scanDirectoryRecursive(
             rootFile,
             catalogId,
             "",
             allItems,
             onProgress = { currentPath, current, total ->
-                onProgress(currentPath, current, total)
+                onProgress(currentPath, current, totalFiles)
                 processedFiles = current
             }
         )
@@ -54,7 +54,7 @@ class FileSystemScanner(private val context: Context) {
             totalFiles = totalFilesCount,
             totalDirectories = totalDirectories,
             totalSize = totalSize,
-            rootItems = allItems.filter { it.parentId == null }
+            rootItems = rootItems
         )
     }
     
@@ -63,23 +63,43 @@ class FileSystemScanner(private val context: Context) {
         catalogId: String,
         relativePath: String,
         allItems: MutableList<VirtualFileItem>,
-        onProgress: (String, Int, Int) -> Unit
-    ) {
+        onProgress: (String, Int, Int) -> Unit,
+        parentId: String? = null
+    ): List<VirtualFileItem> {
         try {
-            val files = directory.listFiles() ?: return
+            val files = directory.listFiles() ?: return emptyList()
+            val items = mutableListOf<VirtualFileItem>()
+            
+            println("=== SCANNING DIRECTORY: ${directory.absolutePath} ===")
+            println("Files found: ${files.size}, parentId: $parentId")
             
             for (file in files) {
                 val itemId = UUID.randomUUID().toString()
                 val currentRelativePath = if (relativePath.isEmpty()) file.name else "$relativePath/${file.name}"
-                val parentId = if (relativePath.isEmpty()) null else {
-                    // Находим ID родительской папки
-                    allItems.find { it.relativePath == relativePath }?.id
-                }
                 
                 val extension = if (file.isFile) {
                     val lastDot = file.name.lastIndexOf('.')
                     if (lastDot > 0) file.name.substring(lastDot + 1) else ""
                 } else ""
+                
+                println("Processing: ${file.name}, isDir: ${file.isDirectory}, parentId: $parentId")
+                
+                // Если это директория, сначала сканируем её содержимое
+                val children = if (file.isDirectory && file.canRead()) {
+                    println("Scanning subdirectory: ${file.absolutePath}")
+                    val subItems = scanDirectoryRecursive(
+                        file,
+                        catalogId,
+                        currentRelativePath,
+                        allItems,
+                        onProgress,
+                        itemId // Передаем ID текущей папки как parentId для дочерних элементов
+                    )
+                    println("Subdirectory ${file.name} has ${subItems.size} items")
+                    subItems
+                } else {
+                    emptyList()
+                }
                 
                 val virtualItem = VirtualFileItem(
                     id = itemId,
@@ -89,29 +109,27 @@ class FileSystemScanner(private val context: Context) {
                     size = if (file.isFile) file.length() else 0,
                     lastModified = Date(file.lastModified()),
                     extension = extension,
-                    parentId = parentId
+                    parentId = parentId,
+                    children = children
                 )
                 
+                items.add(virtualItem)
                 allItems.add(virtualItem)
+                
+                println("Added item: ${file.name}, children: ${children.size}, parentId: $parentId")
                 
                 // Обновляем прогресс
                 onProgress(file.absolutePath, allItems.size, 0)
-                
-                // Если это директория, сканируем её рекурсивно
-                if (file.isDirectory && file.canRead()) {
-                    scanDirectoryRecursive(
-                        file,
-                        catalogId,
-                        currentRelativePath,
-                        allItems,
-                        onProgress
-                    )
-                }
             }
+            
+            println("=== DIRECTORY ${directory.name} COMPLETE: ${items.size} items ===")
+            return items
         } catch (e: SecurityException) {
-            // Игнорируем файлы, к которым нет доступа
+            println("Security exception for ${directory.absolutePath}: ${e.message}")
+            return emptyList()
         } catch (e: Exception) {
-            // Логируем другие ошибки, но продолжаем сканирование
+            println("Exception for ${directory.absolutePath}: ${e.message}")
+            return emptyList()
         }
     }
     

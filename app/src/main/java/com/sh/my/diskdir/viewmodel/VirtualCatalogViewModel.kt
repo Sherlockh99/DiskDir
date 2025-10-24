@@ -95,9 +95,16 @@ class VirtualCatalogViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                println("=== VIEWMODEL: Loading directory contents ===")
+                println("CatalogId: $catalogId, ParentId: $parentId")
                 val items = repository.getDirectoryContents(catalogId, parentId)
+                println("ViewModel received ${items.size} items")
+                items.forEach { item ->
+                    println("ViewModel item: ${item.name}, isDir: ${item.isDirectory}, parentId: ${item.parentId}")
+                }
                 _currentDirectoryItems.value = items
             } catch (e: Exception) {
+                println("ViewModel error: ${e.message}")
                 _currentDirectoryItems.value = emptyList()
             }
             _isLoading.value = false
@@ -107,6 +114,9 @@ class VirtualCatalogViewModel(private val context: Context) : ViewModel() {
     fun navigateToDirectory(itemId: String) {
         val catalog = _currentCatalog.value ?: return
         val item = _currentDirectoryItems.value.find { it.id == itemId } ?: return
+        
+        println("=== VIEWMODEL: Navigating to directory ===")
+        println("Item: ${item.name}, isDir: ${item.isDirectory}, itemId: $itemId")
         
         if (item.isDirectory) {
             loadDirectoryContents(catalog.id, itemId)

@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sh.my.diskdir.data.model.FlashDrive
 import com.sh.my.diskdir.data.model.FlashDriveGroup
+import com.sh.my.diskdir.ui.components.PathSelectionDialog
+import com.sh.my.diskdir.ui.components.VirtualCatalogCard
 import com.sh.my.diskdir.viewmodel.FlashDriveViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -26,22 +28,27 @@ import java.util.*
 @Composable
 fun FlashDriveListScreen(
     viewModel: FlashDriveViewModel,
+    virtualCatalogViewModel: com.sh.my.diskdir.viewmodel.VirtualCatalogViewModel,
     onNavigateToFileExplorer: (String) -> Unit,
     onNavigateToBackup: () -> Unit,
-    onNavigateToGroupManagement: () -> Unit,
-    onNavigateToVirtualCatalog: () -> Unit
+    onNavigateToGroupManagement: () -> Unit
 ) {
     val flashDrives by viewModel.flashDrives.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    
+    val virtualCatalogs by virtualCatalogViewModel.catalogs.collectAsStateWithLifecycle()
+    val virtualCatalogLoading by virtualCatalogViewModel.isLoading.collectAsStateWithLifecycle()
+    
+    var showCreateVirtualCatalog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Флешки и диски") },
+                title = { Text("Виртуальные каталоги") },
                 actions = {
-                    IconButton(onClick = onNavigateToVirtualCatalog) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Виртуальные каталоги")
+                    IconButton(onClick = { showCreateVirtualCatalog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Создать каталог")
                     }
                     IconButton(onClick = onNavigateToBackup) {
                         Icon(Icons.Default.Backup, contentDescription = "Бекап")
@@ -51,9 +58,16 @@ fun FlashDriveListScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showCreateVirtualCatalog = true }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Создать каталог")
+            }
         }
     ) { paddingValues ->
-        if (isLoading) {
+        if (isLoading || virtualCatalogLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -70,40 +84,97 @@ fun FlashDriveListScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Показываем флешки по группам
-                groups.forEach { group ->
+                if (virtualCatalogs.isEmpty()) {
                     item {
-                        GroupHeader(group = group)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Нет виртуальных каталогов",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "Создайте виртуальный каталог для просмотра содержимого без подключения устройства",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Показываем виртуальные каталоги по группам
+                    groups.forEach { group ->
+                        val groupCatalogs = virtualCatalogs.filter { catalog ->
+                            // Здесь можно добавить логику группировки виртуальных каталогов
+                            true // Пока показываем все каталоги
+                        }
+                        
+                        if (groupCatalogs.isNotEmpty()) {
+                            item {
+                                GroupHeader(group = group)
+                            }
+                            
+                            items(groupCatalogs) { catalog ->
+                                VirtualCatalogCard(
+                                    catalog = catalog,
+                                    onClick = { onNavigateToFileExplorer(catalog.id) },
+                                    onDelete = { virtualCatalogViewModel.deleteCatalog(catalog.id) }
+                                )
+                            }
+                        }
                     }
                     
-                    items(group.flashDrives) { flashDrive ->
-                        FlashDriveCard(
-                            flashDrive = flashDrive,
-                            onClick = { onNavigateToFileExplorer(flashDrive.id) }
-                        )
-                    }
-                }
-                
-                // Показываем флешки без группы
-                val ungroupedDrives = flashDrives.filter { it.groupId == null }
-                if (ungroupedDrives.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Без группы",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                    // Показываем каталоги без группы
+                    val ungroupedCatalogs = virtualCatalogs.filter { catalog ->
+                        // Здесь можно добавить логику определения группы
+                        true // Пока показываем все каталоги
                     }
                     
-                    items(ungroupedDrives) { flashDrive ->
-                        FlashDriveCard(
-                            flashDrive = flashDrive,
-                            onClick = { onNavigateToFileExplorer(flashDrive.id) }
-                        )
+                    if (ungroupedCatalogs.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Все каталоги",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        
+                        items(ungroupedCatalogs) { catalog ->
+                            VirtualCatalogCard(
+                                catalog = catalog,
+                                onClick = { onNavigateToFileExplorer(catalog.id) },
+                                onDelete = { virtualCatalogViewModel.deleteCatalog(catalog.id) }
+                            )
+                        }
                     }
                 }
             }
+        }
+        
+        // Диалог создания виртуального каталога
+        if (showCreateVirtualCatalog) {
+            PathSelectionDialog(
+                onDismiss = { showCreateVirtualCatalog = false },
+                onPathSelected = { path, name ->
+                    virtualCatalogViewModel.createVirtualCatalog(path, name)
+                    showCreateVirtualCatalog = false
+                }
+            )
         }
     }
 }
@@ -234,6 +305,7 @@ fun FlashDriveCard(
     }
 }
 
+
 private fun formatBytes(bytes: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     var size = bytes.toDouble()
@@ -246,3 +318,4 @@ private fun formatBytes(bytes: Long): String {
     
     return String.format("%.1f %s", size, units[unitIndex])
 }
+
