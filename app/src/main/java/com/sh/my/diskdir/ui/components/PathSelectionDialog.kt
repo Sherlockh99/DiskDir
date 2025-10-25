@@ -128,10 +128,17 @@ fun FolderPickerDialog(
     
     // Загружаем содержимое текущей папки
     LaunchedEffect(currentPath) {
+        println("=== LOADING FOLDER CONTENTS ===")
+        println("Current path: $currentPath")
         isLoading = true
         try {
             folderItems = loadFolderContents(currentPath)
+            println("Loaded ${folderItems.size} items")
+            folderItems.forEach { item ->
+                println("Item: ${item.name}, isDir: ${item.isDirectory}")
+            }
         } catch (e: Exception) {
+            println("Error loading folder contents: ${e.message}")
             folderItems = emptyList()
         }
         isLoading = false
@@ -211,8 +218,10 @@ fun FolderPickerDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { 
+                                        println("=== CLICKED ROOT FOLDER ===")
                                         showInitialPaths = false
                                         currentPath = "/"
+                                        println("Current path set to: $currentPath")
                                     },
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -353,6 +362,16 @@ fun FolderItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
+                // Добавляем информацию о содержимом папки
+                val itemCount = getItemCount(item.path)
+                if (itemCount > 0) {
+                    Text(
+                        text = "Элементов: $itemCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
+                    )
+                }
             }
             
             if (item.isDirectory) {
@@ -366,6 +385,19 @@ fun FolderItemCard(
     }
 }
 
+private fun getItemCount(path: String): Int {
+    return try {
+        val dir = File(path)
+        if (dir.exists() && dir.isDirectory) {
+            dir.listFiles()?.size ?: 0
+        } else {
+            0
+        }
+    } catch (e: Exception) {
+        0
+    }
+}
+
 data class FolderItem(
     val name: String,
     val path: String,
@@ -374,9 +406,37 @@ data class FolderItem(
 
 private fun loadFolderContents(path: String): List<FolderItem> {
     return try {
+        println("=== LOADING FOLDER CONTENTS ===")
+        println("Path: $path")
+        
         val directory = File(path)
+        println("Directory exists: ${directory.exists()}")
+        println("Is directory: ${directory.isDirectory}")
+        println("Can read: ${directory.canRead()}")
+        println("Can write: ${directory.canWrite()}")
+        println("Is hidden: ${directory.isHidden()}")
+        
         if (directory.exists() && directory.isDirectory) {
-            directory.listFiles()?.map { file ->
+            if (!directory.canRead()) {
+                println("WARNING: Directory exists but cannot be read - this may require root access")
+                // Для /mnt/media_rw попробуем альтернативные способы
+                if (path == "/mnt/media_rw") {
+                    return tryAlternativeUsbPaths()
+                }
+                return emptyList()
+            }
+            
+            val files = directory.listFiles()
+            println("Files array: $files")
+            println("Files count: ${files?.size ?: 0}")
+            
+            if (files != null) {
+                files.forEach { file ->
+                    println("File: ${file.name}, isDir: ${file.isDirectory}, canRead: ${file.canRead()}")
+                }
+            }
+            
+            files?.map { file ->
                 FolderItem(
                     name = file.name,
                     path = file.absolutePath,
@@ -384,11 +444,35 @@ private fun loadFolderContents(path: String): List<FolderItem> {
                 )
             }?.sortedWith(compareBy<FolderItem> { !it.isDirectory }.thenBy { it.name }) ?: emptyList()
         } else {
+            println("Directory not accessible or doesn't exist")
             emptyList()
         }
     } catch (e: Exception) {
+        println("Exception loading folder contents: ${e.message}")
+        e.printStackTrace()
         emptyList()
     }
+}
+
+private fun tryAlternativeUsbPaths(): List<FolderItem> {
+    println("Trying alternative USB paths...")
+    val alternativePaths = listOf(
+        "/storage" to "Внешние накопители",
+        "/mnt" to "Монтированные устройства",
+        "/mnt/usb" to "USB устройства",
+        "/mnt/usbdisk" to "USB диски"
+    )
+    
+    val items = mutableListOf<FolderItem>()
+    alternativePaths.forEach { (path, name) ->
+        val dir = File(path)
+        if (dir.exists() && dir.canRead()) {
+            items.add(FolderItem(name = name, path = path, isDirectory = true))
+            println("Found accessible alternative: $path")
+        }
+    }
+    
+    return items
 }
 
 private fun getParentPath(path: String): String {
@@ -398,42 +482,184 @@ private fun getParentPath(path: String): String {
 
 private fun getInitialPaths(): List<FolderItem> {
     val paths = mutableListOf<FolderItem>()
+    val addedPaths = mutableSetOf<String>()
     
-    // Стандартные пути для внешних устройств
-    val commonPaths = listOf(
-        "/storage" to "Внешние накопители",
-        "/storage/usbotg" to "USB OTG",
-        "/storage/usbdisk" to "USB диск",
-        "/storage/sdcard1" to "SD карта",
-        "/storage/extSdCard" to "Внешняя SD карта",
-        "/mnt/usb" to "USB устройство",
-        "/mnt/sdcard" to "SD карта",
-        "/sdcard" to "Внутренняя память"
-    )
-    
-    commonPaths.forEach { (path, name) ->
-        val file = File(path)
-        if (file.exists() && file.canRead()) {
-            paths.add(
-                FolderItem(
-                    name = name,
-                    path = path,
+    // Функция для добавления пути с проверкой на уникальность
+    fun addPathIfUnique(absolutePath: String, displayName: String) {
+        println("Checking path: '$absolutePath' with name: '$displayName'")
+        
+        val canonicalPath = try {
+            File(absolutePath).canonicalPath
+        } catch (e: Exception) {
+            println("Error getting canonical path for '$absolutePath': ${e.message}")
+            absolutePath
+        }
+        
+        println("Canonical path: '$canonicalPath'")
+        
+        if (!addedPaths.contains(canonicalPath)) {
+            val file = File(absolutePath)
+            println("File exists: ${file.exists()}, canRead: ${file.canRead()}")
+            
+            if (file.exists() && file.canRead()) {
+                val folderItem = FolderItem(
+                    name = displayName,
+                    path = absolutePath,
                     isDirectory = true
                 )
-            )
+                paths.add(folderItem)
+                addedPaths.add(canonicalPath)
+                println("Added unique path: '$absolutePath' -> '$canonicalPath' with name: '$displayName'")
+            } else {
+                println("Skipped path '$absolutePath' - not accessible")
+            }
+        } else {
+            println("Skipped duplicate path: '$absolutePath' -> '$canonicalPath'")
         }
     }
     
-    // Добавляем корневую папку если нет других путей
-    if (paths.isEmpty()) {
-        paths.add(
-            FolderItem(
-                name = "Корневая папка",
-                path = "/",
-                isDirectory = true
-            )
-        )
+    // Проверяем основные пути для внешних устройств
+    val commonPaths = listOf(
+        "/storage/usbotg" to "USB OTG",
+        "/storage/usbdisk" to "USB диск", 
+        "/storage/sdcard1" to "SD карта",
+        "/storage/extSdCard" to "Внешняя SD карта",
+        "/mnt/usb" to "USB устройство",
+        "/mnt/sdcard" to "SD карта"
+    )
+    
+    commonPaths.forEach { (path, name) ->
+        addPathIfUnique(path, name)
     }
     
+    // Ищем реальные устройства в /storage
+    try {
+        val storageDir = File("/storage")
+        println("Scanning /storage directory...")
+        if (storageDir.exists() && storageDir.canRead()) {
+            val storageItems = storageDir.listFiles()
+            println("Found ${storageItems?.size ?: 0} items in /storage")
+            storageItems?.forEach { item ->
+                println("Storage item: ${item.name}, isDir: ${item.isDirectory}")
+                if (item.isDirectory && item.name != "emulated" && item.name != "self") {
+                    val deviceName = when {
+                        item.name.contains("usb", ignoreCase = true) -> "USB устройство (${item.name})"
+                        item.name.contains("sdcard", ignoreCase = true) -> "SD карта (${item.name})"
+                        item.name.contains("ext", ignoreCase = true) -> "Внешнее хранилище (${item.name})"
+                        else -> "Устройство (${item.name})"
+                    }
+                    addPathIfUnique(item.absolutePath, deviceName)
+                }
+            }
+        } else {
+            println("/storage directory not accessible")
+        }
+    } catch (e: Exception) {
+        println("Error scanning /storage: ${e.message}")
+    }
+    
+    // Поиск USB устройств в /mnt/media_rw (основной путь для USB в Android)
+    try {
+        val mediaRwDir = File("/mnt/media_rw")
+        println("Scanning /mnt/media_rw directory...")
+        println("MediaRW exists: ${mediaRwDir.exists()}")
+        println("MediaRW canRead: ${mediaRwDir.canRead()}")
+        println("MediaRW canWrite: ${mediaRwDir.canWrite()}")
+        println("MediaRW isDirectory: ${mediaRwDir.isDirectory}")
+        
+        if (mediaRwDir.exists() && mediaRwDir.canRead()) {
+            val mediaRwItems = mediaRwDir.listFiles()
+            println("Found ${mediaRwItems?.size ?: 0} items in /mnt/media_rw")
+            mediaRwItems?.forEach { item ->
+                println("MediaRW item: ${item.name}, isDir: ${item.isDirectory}, canRead: ${item.canRead()}")
+                if (item.isDirectory) {
+                    val deviceName = when {
+                        item.name.contains("usb", ignoreCase = true) -> "USB устройство (${item.name})"
+                        item.name.contains("sdcard", ignoreCase = true) -> "SD карта (${item.name})"
+                        item.name.contains("ext", ignoreCase = true) -> "Внешнее хранилище (${item.name})"
+                        item.name.matches(Regex("[A-F0-9]+")) -> "USB устройство (${item.name})" // UUID-подобные имена
+                        else -> "Внешнее устройство (${item.name})"
+                    }
+                    addPathIfUnique(item.absolutePath, deviceName)
+                }
+            }
+        } else {
+            println("/mnt/media_rw directory not accessible")
+            // Попробуем альтернативные пути для USB устройств
+            val alternativePaths = listOf(
+                "/storage" to "Внешние накопители",
+                "/mnt" to "Монтированные устройства",
+                "/mnt/usb" to "USB устройства",
+                "/mnt/usbdisk" to "USB диски"
+            )
+            alternativePaths.forEach { (path, name) ->
+                addPathIfUnique(path, name)
+            }
+            
+            // Попробуем найти USB устройства через другие пути
+            try {
+                val usbPaths = listOf("/mnt/usb", "/mnt/usbdisk", "/storage/usbotg")
+                usbPaths.forEach { usbPath ->
+                    val usbDir = File(usbPath)
+                    if (usbDir.exists() && usbDir.canRead()) {
+                        println("Found accessible USB path: $usbPath")
+                        addPathIfUnique(usbPath, "USB устройство")
+                    }
+                }
+            } catch (e: Exception) {
+                println("Error checking alternative USB paths: ${e.message}")
+            }
+        }
+    } catch (e: Exception) {
+        println("Error scanning /mnt/media_rw: ${e.message}")
+        e.printStackTrace()
+    }
+    
+    // Дополнительный поиск в /mnt
+    try {
+        val mntDir = File("/mnt")
+        println("Scanning /mnt directory...")
+        if (mntDir.exists() && mntDir.canRead()) {
+            val mntItems = mntDir.listFiles()
+            println("Found ${mntItems?.size ?: 0} items in /mnt")
+            mntItems?.forEach { item ->
+                println("Mnt item: ${item.name}, isDir: ${item.isDirectory}")
+                if (item.isDirectory && item.name != "media_rw") { // Исключаем media_rw, так как уже проверили
+                    val deviceName = when {
+                        item.name.contains("usb", ignoreCase = true) -> "USB устройство (${item.name})"
+                        item.name.contains("sdcard", ignoreCase = true) -> "SD карта (${item.name})"
+                        item.name.contains("ext", ignoreCase = true) -> "Внешнее хранилище (${item.name})"
+                        else -> "Устройство (${item.name})"
+                    }
+                    addPathIfUnique(item.absolutePath, deviceName)
+                }
+            }
+        } else {
+            println("/mnt directory not accessible")
+        }
+    } catch (e: Exception) {
+        println("Error scanning /mnt: ${e.message}")
+    }
+    
+    // Добавляем внутреннее хранилище (только один вариант)
+    addPathIfUnique("/sdcard", "Внутренняя память")
+    
+    // Добавляем корневую папку
+    addPathIfUnique("/", "Корневая папку (/)")
+
+    // Если /mnt/media_rw недоступна, добавляем информационное сообщение
+    val mediaRwDir = File("/mnt/media_rw")
+    if (mediaRwDir.exists() && !mediaRwDir.canRead()) {
+        println("WARNING: /mnt/media_rw exists but is not readable - this is normal on Android")
+        // Добавляем путь для информации, даже если недоступен
+        addPathIfUnique("/mnt/media_rw", "USB устройства (требует root)")
+    }
+
+    println("=== FINAL PATHS ===")
+    println("Total unique paths found: ${paths.size}")
+    paths.forEachIndexed { index, path ->
+        println("Path $index: '${path.name}' -> '${path.path}'")
+    }
+
     return paths
 }
